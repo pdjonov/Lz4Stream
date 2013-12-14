@@ -63,8 +63,16 @@ Finally, by default, the decoder doesn't close its input stream when it is close
 ###Speed, Robustness
 The decoder is very fast given the constraints it has to work with (no native or unsafe code). It easily beats the
 speed of `System.IO.Compression.DeflateStream` and its equivalents in the [DotNetZip](http://dotnetzip.codeplex.com/)
-and [SharpZipLib](http://www.icsharpcode.net/opensource/sharpziplib/) libraries, *particularly* when reading data
-in many small pieces rather than in large blocks.
+and [SharpZipLib](http://www.icsharpcode.net/opensource/sharpziplib/) libraries, even when they're working with
+zip data that's got a higher compression ratio than the equivalent Lz4 encoding, and *particularly* when reading data
+in many small pieces rather than in large blocks. (This isn't particularly surprising, given that Lz4 was made to
+decode faster than zlib in the first place. I mainly mention this to show that this implementation has not sacrificed
+that property.)
+
+However, because the decoder is working with a streaming interface on both ends, and because it's not decoding data
+a block at a time, it's naturally slower than a straightforward memory-to-memory all-at-once decoder would be. The
+decoder is meant for systems where non-stream interfaces aren't an option, and where the environment doesn't allow
+simply loading the whole of the input data, decoding it into a buffer, and then wrapping it in a `MemoryStream`.
 
 That said, this implementation is **not** suitable for use with untrusted data sources. It isn't going to directly
 cause a security issue (this is verifiable .NET code, no buffer overruns here), however invalid input data *can*
