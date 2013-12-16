@@ -235,11 +235,8 @@ namespace Lz4
 			if( nToRead == 0 )
 				goto finish;
 
-			if( litLen == 0 )
-			{
-				phase = DecodePhase.ReadOffset;
-				goto readOffset;
-			}
+			phase = DecodePhase.ReadOffset;
+			goto readOffset;
 
 		readOffset:
 			if( inBufPos + 1 < inBufEnd )
@@ -338,24 +335,30 @@ namespace Lz4
 			if( nToRead == 0 )
 				goto finish;
 
-			if( matLen == 0 )
-			{
-				phase = DecodePhase.ReadToken;
-				goto readToken;
-			}
+			phase = DecodePhase.ReadToken;
+			goto readToken;
 
 		finish:
 			nRead = count - nToRead;
 
 			int nToBuf = nRead < DecBufLen ? nRead : DecBufLen;
-
 			int repPos = offset - nToBuf;
-			int decPos = decodeBufferPos;
 
-			while( nToBuf-- != 0 )
-				decBuf[decPos++ & DecBufMask] = buffer[repPos++];
+			if( nToBuf == DecBufLen )
+			{
+				Buffer.BlockCopy( buffer, repPos, decBuf, 0, DecBufLen );
+				decodeBufferPos = 0;
+			}
+			else
+			{
+				int decPos = decodeBufferPos;
 
-			decodeBufferPos = decPos & DecBufMask;
+				while( nToBuf-- != 0 )
+					decBuf[decPos++ & DecBufMask] = buffer[repPos++];
+
+				decodeBufferPos = decPos & DecBufMask;
+			}
+
 #if LOCAL_SHADOW
 			this.phase = phase;
 			this.inBufPos = inBufPos;
