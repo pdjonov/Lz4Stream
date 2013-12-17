@@ -187,8 +187,6 @@ p_copy_mat:
 	len = mat_len < avail_out ? mat_len : avail_out;
 	if( len )
 	{
-		uint8_t *out_src;
-
 		size_t n_read = out - out_start;
 		if( mat_dst > n_read )
 		{
@@ -225,9 +223,12 @@ p_copy_mat:
 			mat_len -= buf_cnt;
 		}
 
-		out_src = out - mat_dst;
-		for( size_t c = len; c--; )
-			*out++ = *out_src++;
+		{
+			size_t c = len;
+			const uint8_t *out_src = out - mat_dst;
+			while( c-- )
+				*out++ = *out_src++;
+		}
 
 		avail_out -= len;
 		mat_len -= len;
