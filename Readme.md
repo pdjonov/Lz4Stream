@@ -102,13 +102,13 @@ Using the decoder is fairly easy (if you've used zlib, this is going to be famil
 
 1. Include [lz4_stream.h](lz4_stream.h).
 2. First, allocate a `lz4_dec_stream_state` (it's big, so take care if you're looking at putting ito on the stack).
-3. Call `lz4_dec_steram_init`.
+3. Call `lz4_dec_stream_init`.
 4. While there's data to decode:
   1. Set the stream state's input and output buffers appropriately.
-  2. Call `lz4_dec_steram_run`.
+  2. Call `lz4_dec_stream_run`.
 
 The stream will alter the values of its `in`, `avail_in`, `out`, and `avail_out` fields as it runs. You can monitor its
-progress by comparing the values in these fields after `lz4_dec_steram_run` returns to what you set them to beforehand.
+progress by comparing the values in these fields after `lz4_dec_stream_run` returns to what you set them to beforehand.
 
 The decoder **will read as far ahead as it can** in the input stream, even if it has already filled the output buffer.
 Make sure you don't give it an input buffer that extends past the end of the actual encoded data, as it may report spurious
@@ -125,7 +125,7 @@ errors when it attempts to parse them.
 uint8_t in_buf[IN_BUF_LEN], out_buf[OUT_BUF_LEN];
 lz4_dec_stream_state dec;
 
-lz4_dec_steram_init( &dec );
+lz4_dec_stream_init( &dec );
 
 dec.avail_in = 0;
 
@@ -152,7 +152,7 @@ for( ; ; )
     
     //run the decoder
     
-    stat = lz4_dec_steram_run( &dec );
+    stat = lz4_dec_stream_run( &dec );
     if( stat )
         //decode error, can't really recover
         abort();

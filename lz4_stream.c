@@ -3,6 +3,7 @@
 #include <string.h>
 #include <limits.h>
 #include <assert.h>
+#include <stdlib.h>
 
 #define PHASE_READ_TOK			0
 #define PHASE_READ_EX_LIT_LEN	1
@@ -18,7 +19,7 @@
 
 #define O_BUF_LEN				(sizeof( ((lz4_dec_stream_state*)0)->p_.o_buf ))
 
-void lz4_dec_steram_init( lz4_dec_stream_state *s )
+void lz4_dec_stream_init( lz4_dec_stream_state *s )
 {
 	s->in = 0;
 	s->avail_in = 0;
@@ -35,7 +36,7 @@ void lz4_dec_steram_init( lz4_dec_stream_state *s )
 	s->p_.phase = PHASE_READ_TOK;
 }
 
-int lz4_dec_steram_run( lz4_dec_stream_state *s )
+int lz4_dec_stream_run( lz4_dec_stream_state *s )
 {
 	//pull everything into locals
 
@@ -71,10 +72,16 @@ int lz4_dec_steram_run( lz4_dec_stream_state *s )
 	case PHASE_COPY_MAT:			goto p_copy_mat;
 	case PHASE_REPORT_ERROR:		return -1;
 
-#if _MSC_VER
 	default:
 		assert( 0 && "corrupt decoder stream state" );
+#if _MSC_VER
+		//this is a programmer error, not a result of bad input
+		//let the compiler hoist out the check in release builds
 		__assume( 0 );
+#else
+		//the return isn't included in MSVC builds since the __assume( 0 )
+		//annotation (correctly) triggers "unreachable code" warnings
+		return -1;
 #endif
 	}
 
