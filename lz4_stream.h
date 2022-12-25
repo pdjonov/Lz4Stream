@@ -1,6 +1,7 @@
 #ifndef LZ4_STREAM_H
 #define LZ4_STREAM_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
