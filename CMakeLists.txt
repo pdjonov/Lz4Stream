@@ -54,6 +54,8 @@ if (LZ4STREAM_TESTS_EXE)
 	target_include_directories(lz4_stream-tests PRIVATE
 		${lz4_SOURCE_DIR}/lib)
 	set_target_properties(lz4_stream-tests PROPERTIES
+		CXX_STANDARD 20
+		CXX_STANDARD_REQUIRED TRUE
 		OUTPUT_NAME lz4_stream-tests)
 	target_link_libraries(lz4_stream-tests PRIVATE
 		lz4_stream-static
