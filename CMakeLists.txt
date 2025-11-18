@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.26)
+cmake_minimum_required(VERSION 3.31)
 
 project(lz4_stream, VERSION 1.1 DESCRIPTION "LZ4 streaming decompression library")
 
@@ -28,8 +28,10 @@ target_compile_options(lz4_stream-static PRIVATE
 	$<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>)
 
 if (LZ4STREAM_DEBUG_OPT)
-	message("lz4_stream: forcing -O3 in Debug")
-	target_compile_options(lz4_stream PRIVATE $<$<CONFIG:Debug>:-O3>)
+	#message("lz4_stream: forcing -O2 in Debug")
+	#target_compile_options(lz4_stream-static PRIVATE $<$<CONFIG:Debug>:-O1>)
+
+	message("lz4_stream: forcing -O2 in Debug is currently unsupported")
 endif()
 
 if (LZ4STREAM_TESTS_EXE)

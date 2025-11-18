@@ -1,6 +1,91 @@
 # Lz4Stream
 
-This is a small library of streaming LZ4 decoders.
+This is a small library of streaming LZ4 decoders, one in C and the other in C++.
+
+# lz4_stream
+
+`lz4_stream` is a LZ4 decoder written in C with a zlib-like interface.
+
+## Usage
+
+Using the decoder is fairly easy (if you've used zlib, this is going to be familiar).
+
+1. Include [lz4_stream.h](lz4_stream.h).
+2. First, allocate a `lz4_dec_stream_state` (it's big, so take care if you're looking at putting ito on the stack).
+3. Call `lz4_dec_stream_init`.
+4. While there's data to decode:
+  1. Set the stream state's input and output buffers appropriately.
+  2. Call `lz4_dec_stream_run`.
+5. If necessary, deallocate the `lz4_dec_stream_state` object.
+
+The stream will alter the values of its `in`, `avail_in`, `out`, and `avail_out` fields as it runs. You can monitor its progress by comparing the values in these fields after `lz4_dec_stream_run` returns to what you set them to beforehand.
+
+The decoder **will read as far ahead as it can** in the input stream, even if it has already filled the output buffer. Make sure you don't give it an input buffer that extends past the end of the actual encoded data, as it may generate errors when it attempts to parse them.
+
+All of the decoder state is in the `lz4_dec_stream_state` object. `lz4_dec_stream_init` allocates nothing further. There's nothing to delete or free when you're done. Just deallocate `lz4_dec_stream_state` however is appropriate.
+
+```c
+#include "lz4_stream.h"
+
+//...
+
+#define IN_BUF_LEN 4096
+#define OUT_BUF_LEN 4096
+
+uint8_t in_buf[IN_BUF_LEN], out_buf[OUT_BUF_LEN];
+
+lz4_dec_stream_state dec;
+lz4_dec_stream_init(&dec);
+
+dec.avail_in = 0;
+
+for (;;)
+{
+    int stat;
+    size_t n_in, n_out, n_in_buf_left;
+
+    //top up the input buffer
+
+    in_buf_left = &in_buf[IN_BUF_LEN] - dec.in;
+    if (!dec.avail_in || !in_buf_left)
+        //decoder's read to the end of the buffer,
+        //start refilling it at the beginning
+        dec.in = in_buf;
+
+    n_in = read_input_data(dec.in, &in_buf[IN_BUF_LEN] - dec.in);
+    dec.avail_in += n_in;
+
+    //set up the output buffer
+
+    dec.out = out_buf;
+    dec.avail_out = OUT_BUF_LEN;
+
+    //run the decoder
+
+    stat = lz4_dec_stream_run(&dec);
+    if (stat)
+        //decode error, can't really recover
+        abort();
+
+    //use the output data
+
+    n_out = dec.out - out_buf;
+    write_output_data(out_buf, n_out);
+
+    if (!n_in && !n_out)
+        //if we've run out of input data and the decoder has
+        //produced no output data, then we're done decoding
+        break;
+}
+```
+
+In addition to `lz4_dec_stream_run`, a `lz4_dec_stream_run_dst_uncached` function is also provided. It is slightly slower than `lz4_dec_stream_run`, but it plays nice with uncached memory. This is useful when you want to decode directly into a device buffer (for instance, a GPU buffer that can't be mapped cached).
+
+## Speed, Robustness
+
+This isn't going to match the performance you get with the standard LZ4 implementation decoding an entire block of data in a single run, but it's still nice and quick.
+
+The implementation has not been thoroughly audited for robustness or security. It shouldn't read or write outside the buffers you give it, but it doesn't strictly validate the input stream and there may be cases where it produces corrupt or invalid output without reporting an error.
 
 # Lz4DecoderStream
 
@@ -64,83 +149,3 @@ The decoder can be tuned by commenting or uncommenting the `#define`s at the top
 * **`CHECK_ARGS`:** Disable this option to skip argument validation in `Read`. This is generally only useful if you make a tremendous number of very small reads on a CPU-constrained platform.
 * **`CHECK_EOF`:** Disabling this option disables a number of checks designed to gracefully handle the end of the input stream. This is only safe to use if you're certain you'll never give the decoder a truncated input stream.
 * **`LOCAL_SHADOW`:** Enabling this option may result in a speed increase on platforms with poor indirect load and store performance (mainly weaker ARM chips). Enabling this complicates the code, somewhat, and may be a performance loss, so measure carefully.
-
-#lz4_stream
-
-`lz4_stream` is a LZ4 decoder written in C with a zlib-like interface.
-
-## Usage
-
-Using the decoder is fairly easy (if you've used zlib, this is going to be familiar).
-
-1. Include [lz4_stream.h](lz4_stream.h).
-2. First, allocate a `lz4_dec_stream_state` (it's big, so take care if you're looking at putting ito on the stack).
-3. Call `lz4_dec_stream_init`.
-4. While there's data to decode:
-  1. Set the stream state's input and output buffers appropriately.
-  2. Call `lz4_dec_stream_run`.
-
-The stream will alter the values of its `in`, `avail_in`, `out`, and `avail_out` fields as it runs. You can monitor its progress by comparing the values in these fields after `lz4_dec_stream_run` returns to what you set them to beforehand.
-
-The decoder **will read as far ahead as it can** in the input stream, even if it has already filled the output buffer. Make sure you don't give it an input buffer that extends past the end of the actual encoded data, as it may report spurious errors when it attempts to parse them.
-
-```c
-#include "lz4_stream.h"
-
-//...
-
-#define IN_BUF_LEN 4096
-#define OUT_BUF_LEN 4096
-
-uint8_t in_buf[IN_BUF_LEN], out_buf[OUT_BUF_LEN];
-
-lz4_dec_stream_state dec;
-lz4_dec_stream_init(&dec);
-
-dec.avail_in = 0;
-
-for (;;)
-{
-    int stat;
-    size_t n_in, n_out, n_in_buf_left;
-
-    //top up the input buffer
-
-    in_buf_left = &in_buf[IN_BUF_LEN] - dec.in;
-    if (!dec.avail_in || !in_buf_left)
-        //decoder's read to the end of the buffer,
-        //start refilling it at the beginning
-        dec.in = in_buf;
-
-    n_in = read_input_data(dec.in, &in_buf[IN_BUF_LEN] - dec.in);
-    dec.avail_in += n_in;
-
-    //set up the output buffer
-
-    dec.out = out_buf;
-    dec.avail_out = OUT_BUF_LEN;
-
-    //run the decoder
-
-    stat = lz4_dec_stream_run(&dec);
-    if (stat)
-        //decode error, can't really recover
-        abort();
-
-    //use the output data
-
-    n_out = dec.out - out_buf;
-    write_output_data(out_buf, n_out);
-
-    if (!n_in && !n_out)
-        //if we've run out of input data and the decoder has
-        //produced no output data, then we're done decoding
-        break;
-}
-```
-
-## Speed, Robustness
-
-This isn't going to match the performance you get with the standard LZ4 implementation decoding an entire block of data in a single run, but it's still nice and quick.
-
-The implementation has not been thoroughly audited for robustness or security. It shouldn't read or write outside the buffers you give it, but it doesn't strictly validate the input stream and there may be cases where it produces corrupt or invalid output without reporting an error.
