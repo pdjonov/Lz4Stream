@@ -351,14 +351,42 @@ phase_COPY_LIT: //copy lit_len bytes from the input to the output
 		if (clamped_lit_len > avail_out)
 			clamped_lit_len = (unsigned int)avail_out;
 
-		for (unsigned int i = 0; i < clamped_lit_len; i++)
+		if (clamped_lit_len > O_BUF_LEN)
 		{
-			uint8_t c = *in++;
+			unsigned int first_copy_len = clamped_lit_len - O_BUF_LEN;
+			memcpy(out, in, first_copy_len);
+			in += first_copy_len;
+			out += first_copy_len;
 
-			o_buf[o_pos] = c;
-			o_pos = WRAP_OBUF_IDX(o_pos + 1);
+			memcpy(o_buf, in, O_BUF_LEN);
+			in += O_BUF_LEN;
+			memcpy(out, o_buf, O_BUF_LEN);
+			out += O_BUF_LEN;
 
-			*out++ = c;
+			o_pos = 0;
+		}
+		else
+		{
+			unsigned int o_buf_avail = O_BUF_LEN - o_pos;
+
+			unsigned int first_copy_len = clamped_lit_len < o_buf_avail ? clamped_lit_len : o_buf_avail;
+			memcpy(o_buf + o_pos, in, first_copy_len);
+			in += first_copy_len;
+			memcpy(out, o_buf + o_pos, first_copy_len);
+			out += first_copy_len;
+
+			o_pos = WRAP_OBUF_IDX(o_pos + first_copy_len);
+
+			unsigned int second_copy_len = clamped_lit_len - first_copy_len;
+			if (second_copy_len)
+			{
+				memcpy(o_buf, in, second_copy_len);
+				in += second_copy_len;
+				memcpy(out, o_buf, second_copy_len);
+				out += second_copy_len;
+
+				o_pos = second_copy_len;
+			}
 		}
 
 		avail_out -= clamped_lit_len;

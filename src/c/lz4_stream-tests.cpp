@@ -82,11 +82,23 @@ static void test_runners()
 						REQUIRE(i != i);
 		};
 
-		test_limited();
+		SECTION("one shot")
+		{
+			test_limited();
+		}
+
 		if (input.size() > 1024)
-			test_limited(1024, SIZE_MAX);
-		if (output.size() > 1024)
-			test_limited(SIZE_MAX, 1024);
+			SECTION("1K read")
+			{
+				
+				test_limited(1024, SIZE_MAX);
+			}
+
+		if (input.size() > 1024)
+			SECTION("1K write")
+			{
+				test_limited(SIZE_MAX, 1024);
+			}
 	};
 
 	SECTION("lz4_dec_stream_run")
@@ -195,6 +207,11 @@ TEST_CASE("0x40000 zeroes")
 	test_runners<constant_span<0x40000>>();
 }
 
+TEST_CASE("0x400000 zeroes")
+{
+	test_runners<constant_span<0x400000>>();
+}
+
 TEST_CASE("Xorshift noise")
 {
 	test_runners<xorshift_uints<0x10000>>();
@@ -223,5 +240,17 @@ TEST_CASE("big mixed")
 					counting_span<255, 0>
 				>, 4>,
 			constant_span<0x10000, 0xBA>
-		>>();
+		>
+	>();
+}
+
+TEST_CASE("many matches")
+{
+	test_runners<
+		repeated_generator<
+				chained_generators<
+					counting_span<0, 255>,
+					counting_span<255, 0>
+				>, 8 * 1024>
+	>();
 }
