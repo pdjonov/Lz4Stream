@@ -4,6 +4,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <climits>
+#include <cstdint>
 #include <vector>
 
 template <typename Generator>
@@ -101,12 +103,12 @@ static void test_runners()
 			}
 	};
 
-	SECTION("lz4_dec_stream_run")
+	SECTION("base")
 	{
 		test_runner(lz4_dec_stream_run);
 	}
 
-	SECTION("lz4_dec_stream_run_dst_uncached")
+	SECTION("dst_uncached")
 	{
 		test_runner(lz4_dec_stream_run_dst_uncached);
 	}

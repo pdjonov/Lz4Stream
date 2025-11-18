@@ -3,7 +3,6 @@
 #include <string.h>
 #include <limits.h>
 #include <assert.h>
-#include <stdlib.h>
 
 #define PHASE_READ_TOK			0
 #define PHASE_READ_EX_LIT_LEN	1
@@ -22,17 +21,27 @@
 _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix below");
 #define WRAP_OBUF_IDX(idx) 		((idx) & (O_BUF_LEN - 1))
 
-
 /*
 	Helper macros to make the state machine easier to see.
 */
 
 #if defined(_MSC_VER)
 	#define STREAM_RUN_UNREACHABLE()	__assume(0)
-#elif defined(__GNUG__)
+#elif defined(__GNUC__)
 	#define STREAM_RUN_UNREACHABLE()	__builtin_unreachable()
 #else
 	#define STREAM_RUN_UNREACHABLE()	goto phase_REPORT_ERROR
+#endif
+
+#if defined(__GNUC__)
+	#define MACRO_IF_BLOCK_(cond, ...) \
+		_Pragma("GCC diagnostic push") \
+		_Pragma("GCC diagnostic ignored \"-Wdangling-else\"") \
+		if (cond) __VA_ARGS__ else ((void)0) \
+		_Pragma("GCC diagnostic pop")
+#else
+	#define MACRO_IF_BLOCK_(cond, ...) \
+		if (cond) __VA_ARGS__ else ((void)0)
 #endif
 
 #define STREAM_RUN_PROLOG() \
@@ -71,11 +80,11 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	}
 
 #define TRANSITION_TO_PHASE(next_phase) \
-	if (1) { phase = PHASE_##next_phase; goto phase_##next_phase; } else ((void)0)
+	MACRO_IF_BLOCK_(1, {phase = PHASE_##next_phase; goto phase_##next_phase;})
 #define SUSPEND_FOR_NOW() \
 	goto suspend_for_now
 #define SUSPEND_IF_INPUT_EMPTY() \
-	if (in == in_end) SUSPEND_FOR_NOW(); else ((void)0)
+	MACRO_IF_BLOCK_(in == in_end, SUSPEND_FOR_NOW();)
 
 #define STREAM_RUN_SUSPEND_EPILOG() \
 	s->in = in; \
