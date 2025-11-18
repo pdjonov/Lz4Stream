@@ -63,8 +63,9 @@ typedef struct lz4_dec_stream_state
 	} p_;
 } lz4_dec_stream_state;
 
-void lz4_dec_stream_init( lz4_dec_stream_state *s );
-int lz4_dec_stream_run( lz4_dec_stream_state *s );
+void lz4_dec_stream_init(lz4_dec_stream_state *s);
+int lz4_dec_stream_run(lz4_dec_stream_state *s);
+int lz4_dec_stream_run_dst_uncached(lz4_dec_stream_state *s);
 
 #ifdef __cplusplus
 }
