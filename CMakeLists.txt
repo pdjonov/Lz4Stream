@@ -28,10 +28,12 @@ target_compile_options(lz4_stream-static PRIVATE
 	$<IF:$<CXX_COMPILER_ID:MSVC>,/W4,-Wall -Wextra -Wpedantic>)
 
 if (LZ4STREAM_DEBUG_OPT)
-	#message("lz4_stream: forcing -O2 in Debug")
-	#target_compile_options(lz4_stream-static PRIVATE $<$<CONFIG:Debug>:-O1>)
-
-	message("lz4_stream: forcing -O2 in Debug is currently unsupported")
+	if(MSVC)
+		message("lz4_stream: forcing -O2 in Debug is currently unsupported on MSVC")
+	else()
+		message("lz4_stream: forcing -O2 in Debug")
+		target_compile_options(lz4_stream-static PRIVATE $<$<CONFIG:Debug>:-O1>)
+	endif()
 endif()
 
 if (LZ4STREAM_TESTS_EXE)
