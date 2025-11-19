@@ -92,7 +92,6 @@ static void test_runners()
 		if (input.size() > 1024)
 			SECTION("1K read")
 			{
-				
 				test_limited(1024, SIZE_MAX);
 			}
 
@@ -100,6 +99,18 @@ static void test_runners()
 			SECTION("1K write")
 			{
 				test_limited(SIZE_MAX, 1024);
+			}
+
+		if (input.size() > 512)
+			SECTION("512B read")
+			{
+				test_limited(512, SIZE_MAX);
+			}
+
+		if (input.size() > 512)
+			SECTION("512B write")
+			{
+				test_limited(SIZE_MAX, 512);
 			}
 	};
 

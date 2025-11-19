@@ -33,13 +33,17 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	#define STREAM_RUN_UNREACHABLE()	goto phase_REPORT_ERROR
 #endif
 
-#if defined(__GNUC__)
+#if defined(__clang__)
 	#define MACRO_IF_BLOCK_(cond, ...) \
 		_Pragma("GCC diagnostic push") \
 		_Pragma("GCC diagnostic ignored \"-Wdangling-else\"") \
 		if (cond) __VA_ARGS__ else ((void)0) \
 		_Pragma("GCC diagnostic pop")
 #else
+	#if defined(__GNUC__)
+	#pragma GCC diagnostic ignored "-Wdangling-else" //GCC doesn't like the way we _Pragma
+	#endif
+
 	#define MACRO_IF_BLOCK_(cond, ...) \
 		if (cond) __VA_ARGS__ else ((void)0)
 #endif
