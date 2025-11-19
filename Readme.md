@@ -1,6 +1,6 @@
 # Lz4Stream
 
-This is a small library of streaming LZ4 decoders, one in C and the other in C++.
+This is a small library of streaming LZ4 decoders, one in C and the other in C#.
 
 # lz4_stream
 
