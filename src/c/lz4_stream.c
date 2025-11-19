@@ -312,6 +312,106 @@ phase_REPORT_ERROR:
 	return -1;
 }
 
+static unsigned int lz4_dec_cpy_no_overlap_mat_ptr(
+	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	unsigned int n_copied = 0;
+
+	while (copy_mat_len >= sizeof(uintptr_t))
+	{
+		uintptr_t c;
+
+		if (O_BUF_LEN - o_inpos >= sizeof(c) &&
+			O_BUF_LEN - o_pos >= sizeof(c))
+		{
+			memcpy(&c, o_buf + o_inpos, sizeof(c));
+			o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+
+			memcpy(o_buf + o_pos, &c, sizeof(c));
+			o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+		}
+		else
+		{
+			uint8_t c1[sizeof(c)];
+
+			for (unsigned int i = 0; i < sizeof(c); i++)
+			{
+				c1[i] = o_buf[o_inpos];
+				o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+				o_buf[o_pos] = c1[i];
+				o_pos = WRAP_OBUF_IDX(o_pos + 1);
+			}
+
+			memcpy(&c, c1, sizeof(c));
+		}
+
+		memcpy(out + n_copied, &c, sizeof(c));
+		n_copied += sizeof(c);
+
+		copy_mat_len -= sizeof(c);
+	}
+
+	return n_copied;
+}
+
+static unsigned int lz4_dec_cpy_no_overlap_mat_16(
+	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	unsigned int n_copied = 0;
+
+	while (copy_mat_len >= 16)
+	{
+		_Alignas(16) uint8_t c[16];
+
+		if (O_BUF_LEN - o_inpos >= sizeof(c) &&
+			O_BUF_LEN - o_pos >= sizeof(c))
+		{
+			memcpy(c, o_buf + o_inpos, sizeof(c));
+			o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+
+			memcpy(o_buf + o_pos, c, sizeof(c));
+			o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+		}
+		else
+		{
+			for (unsigned int i = 0; i < sizeof(c); i++)
+			{
+				c[i] = o_buf[o_inpos];
+				o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+				o_buf[o_pos] = c[i];
+				o_pos = WRAP_OBUF_IDX(o_pos + 1);
+			}
+		}
+
+		memcpy(out + n_copied, c, sizeof(c));
+		n_copied += sizeof(c);
+
+		copy_mat_len -= sizeof(c);
+	}
+
+	return n_copied;
+}
+
+static void lz4_dec_cpy_no_overlap_bytes(
+	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	for (unsigned int i = 0; i < copy_mat_len; i++)
+	{
+		uint8_t c = o_buf[o_inpos];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+		o_buf[o_pos] = c;
+		o_pos = WRAP_OBUF_IDX(o_pos + 1);
+
+		*out++ = c;
+	}
+}
+
 int lz4_dec_stream_run_dst_uncached(lz4_dec_stream_state* s)
 {
 	STREAM_RUN_PROLOG();
@@ -453,106 +553,25 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 		if (clamped_mat_len > avail_out)
 			clamped_mat_len = (unsigned int)avail_out;
 
-#if 1
 		unsigned int copy_mat_len = clamped_mat_len;
 
-	#if 0
+		_Static_assert(sizeof(uintptr_t) < 16, "fix below");
+		unsigned int n_copied;
 		if (mat_dst >= 16)
-		{
-			_Alignas(16) uint8_t c[16];
+			n_copied = lz4_dec_cpy_no_overlap_mat_16(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		else if (mat_dst >= sizeof(uintptr_t))
+			n_copied = lz4_dec_cpy_no_overlap_mat_ptr(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		else
+			n_copied = 0;
 
-			while (copy_mat_len >= sizeof(c))
-			{
-				if (O_BUF_LEN - o_inpos >= sizeof(c) &&
-					O_BUF_LEN - o_pos >= sizeof(c))
-				{
-					memcpy(c, o_buf + o_inpos, sizeof(c));
-					o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+		o_inpos = WRAP_OBUF_IDX(o_inpos + n_copied);
+		o_pos = WRAP_OBUF_IDX(o_pos + n_copied);
+		copy_mat_len -= n_copied;
+		out += n_copied;
 
-					memcpy(o_buf + o_pos, c, sizeof(c));
-					o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
-				}
-				else
-				{
-					for (unsigned int i = 0; i < sizeof(c); i++)
-					{
-						c[i] = o_buf[o_inpos];
-						o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
-
-						o_buf[o_pos] = c[i];
-						o_pos = WRAP_OBUF_IDX(o_pos + 1);
-					}
-				}
-
-				memcpy(out, c, sizeof(c));
-				out += sizeof(c);
-
-				copy_mat_len -= sizeof(c);
-			}
-		}
-	#else
-		if (mat_dst >= sizeof(uintptr_t))
-		{
-			uintptr_t c;
-
-			while (copy_mat_len >= sizeof(c))
-			{
-				if (O_BUF_LEN - o_inpos >= sizeof(c) &&
-					O_BUF_LEN - o_pos >= sizeof(c))
-				{
-					memcpy(&c, o_buf + o_inpos, sizeof(c));
-					o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
-
-					memcpy(o_buf + o_pos, &c, sizeof(c));
-					o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
-				}
-				else
-				{
-					uint8_t c1[sizeof(c)];
-
-					for (unsigned int i = 0; i < sizeof(c); i++)
-					{
-						c1[i] = o_buf[o_inpos];
-						o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
-
-						o_buf[o_pos] = c1[i];
-						o_pos = WRAP_OBUF_IDX(o_pos + 1);
-					}
-
-					memcpy(&c, c1, sizeof(c));
-				}
-
-				memcpy(out, &c, sizeof(c));
-				out += sizeof(c);
-
-				copy_mat_len -= sizeof(c);
-			}
-		}
-	#endif
-
-	for (unsigned int i = 0; i < copy_mat_len; i++)
-	{
-		uint8_t c = o_buf[o_inpos];
-		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
-
-		o_buf[o_pos] = c;
-		o_pos = WRAP_OBUF_IDX(o_pos + 1);
-
-		*out++ = c;
-	}
-
-#else
-		for (unsigned int i = 0; i < clamped_mat_len; i++)
-		{
-			uint8_t c = o_buf[o_inpos];
-			o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
-
-			o_buf[o_pos] = c;
-			o_pos = WRAP_OBUF_IDX(o_pos + 1);
-
-			*out++ = c;
-		}
-#endif
+		lz4_dec_cpy_no_overlap_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		o_pos = WRAP_OBUF_IDX(o_pos + copy_mat_len);
+		out += copy_mat_len;
 
 		avail_out -= clamped_mat_len;
 		mat_len -= clamped_mat_len;
