@@ -52,9 +52,15 @@ if (LZ4STREAM_TESTS_EXE)
 	)
 	FetchContent_MakeAvailable(lz4)
 
-	add_executable(lz4_stream-tests
-		${LZ4STREAM_SOURCE_DIR}/lz4_stream-tests.cpp
+	add_library(lz4_stream-tests-liblz4 STATIC
 		${lz4_SOURCE_DIR}/lib/lz4.c)
+	if(NOT MSVC)
+		target_compile_options(lz4_stream-tests-liblz4 PRIVATE
+			-O3)
+	endif()
+
+	add_executable(lz4_stream-tests
+		${LZ4STREAM_SOURCE_DIR}/lz4_stream-tests.cpp)
 	target_include_directories(lz4_stream-tests PRIVATE
 		${lz4_SOURCE_DIR}/lib)
 	set_target_properties(lz4_stream-tests PROPERTIES
@@ -63,5 +69,6 @@ if (LZ4STREAM_TESTS_EXE)
 		OUTPUT_NAME lz4_stream-tests)
 	target_link_libraries(lz4_stream-tests PRIVATE
 		lz4_stream-static
+		lz4_stream-tests-liblz4
 		Catch2::Catch2WithMain)
 endif()

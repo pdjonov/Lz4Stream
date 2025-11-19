@@ -33,13 +33,17 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	#define STREAM_RUN_UNREACHABLE()	goto phase_REPORT_ERROR
 #endif
 
-#if defined(__GNUC__)
+#if defined(__clang__)
 	#define MACRO_IF_BLOCK_(cond, ...) \
 		_Pragma("GCC diagnostic push") \
 		_Pragma("GCC diagnostic ignored \"-Wdangling-else\"") \
 		if (cond) __VA_ARGS__ else ((void)0) \
 		_Pragma("GCC diagnostic pop")
 #else
+	#if defined(__GNUC__)
+	#pragma GCC diagnostic ignored "-Wdangling-else" //GCC doesn't like the way we _Pragma
+	#endif
+
 	#define MACRO_IF_BLOCK_(cond, ...) \
 		if (cond) __VA_ARGS__ else ((void)0)
 #endif
@@ -312,6 +316,119 @@ phase_REPORT_ERROR:
 	return -1;
 }
 
+static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
+	unsigned int copy_mat_len,
+	unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	unsigned int n_copied = 0;
+
+	while (copy_mat_len >= sizeof(uintptr_t))
+	{
+		uintptr_t c;
+
+		if (O_BUF_LEN - o_inpos >= sizeof(c) &&
+			O_BUF_LEN - o_pos >= sizeof(c))
+		{
+			memcpy(&c, o_buf + o_inpos, sizeof(c));
+			o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+
+			memcpy(o_buf + o_pos, &c, sizeof(c));
+			o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+		}
+		else
+		{
+			uint8_t c1[sizeof(c)];
+
+			for (unsigned int i = 0; i < sizeof(c); i++)
+			{
+				c1[i] = o_buf[o_inpos];
+				o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+				o_buf[o_pos] = c1[i];
+				o_pos = WRAP_OBUF_IDX(o_pos + 1);
+			}
+
+			memcpy(&c, c1, sizeof(c));
+		}
+
+		memcpy(out + n_copied, &c, sizeof(c));
+		n_copied += sizeof(c);
+
+		copy_mat_len -= sizeof(c);
+	}
+
+	return n_copied;
+}
+
+static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
+	unsigned int copy_mat_len, unsigned int mat_dst,
+	unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	if (copy_mat_len < sizeof(uintptr_t))
+		return 0;
+
+	unsigned int n_copied = 0;
+
+	uint8_t c_buf[sizeof(uintptr_t)];
+	assert(mat_dst < sizeof(c_buf));
+
+	for (unsigned int i = 0; i < mat_dst; i++)
+	{
+		c_buf[i] = o_buf[o_inpos];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+	}
+
+	for (unsigned int i = mat_dst; i < sizeof(c_buf); i++)
+		c_buf[i] = c_buf[i - mat_dst];
+
+	uintptr_t c;
+	memcpy(&c, c_buf, sizeof(c));
+
+	unsigned int jmp_dst = (sizeof(c_buf) / mat_dst) * mat_dst;
+
+	while (copy_mat_len >= sizeof(c))
+	{
+		if (O_BUF_LEN - o_pos >= sizeof(c))
+		{
+			memcpy(o_buf + o_pos, &c, sizeof(c)); //we want a MOV, not a library call!
+			o_pos = WRAP_OBUF_IDX(o_pos + jmp_dst);
+		}
+		else
+		{
+			for (unsigned int i = 0; i < jmp_dst; i++)
+			{
+				o_buf[o_pos] = c_buf[i];
+				o_pos = WRAP_OBUF_IDX(o_pos + 1);
+			}
+		}
+
+		memcpy(out + n_copied, &c, sizeof(c));
+		n_copied += jmp_dst;
+
+		copy_mat_len -= jmp_dst;
+	}
+
+	return n_copied;
+}
+
+static void lz4_dec_cpy_bytes(
+	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	for (unsigned int i = 0; i < copy_mat_len; i++)
+	{
+		uint8_t c = o_buf[o_inpos];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+		o_buf[o_pos] = c;
+		o_pos = WRAP_OBUF_IDX(o_pos + 1);
+
+		*out++ = c;
+	}
+}
+
 int lz4_dec_stream_run_dst_uncached(lz4_dec_stream_state* s)
 {
 	STREAM_RUN_PROLOG();
@@ -453,16 +570,23 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 		if (clamped_mat_len > avail_out)
 			clamped_mat_len = (unsigned int)avail_out;
 
-		for (unsigned int i = 0; i < clamped_mat_len; i++)
-		{
-			uint8_t c = o_buf[o_inpos];
-			o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+		unsigned int copy_mat_len = clamped_mat_len;
 
-			o_buf[o_pos] = c;
-			o_pos = WRAP_OBUF_IDX(o_pos + 1);
+		_Static_assert(sizeof(uintptr_t) < 16, "fix below");
+		unsigned int n_copied;
+		if (mat_dst >= sizeof(uintptr_t))
+			n_copied = lz4_dec_cpy_mat_no_overlap_ptr(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		else
+			n_copied = lz4_dec_cpy_mat_overlapped_ptr(copy_mat_len, mat_dst, o_inpos, o_pos, o_buf, out);
 
-			*out++ = c;
-		}
+		o_inpos = WRAP_OBUF_IDX(o_inpos + n_copied);
+		o_pos = WRAP_OBUF_IDX(o_pos + n_copied);
+		copy_mat_len -= n_copied;
+		out += n_copied;
+
+		lz4_dec_cpy_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		o_pos = WRAP_OBUF_IDX(o_pos + copy_mat_len);
+		out += copy_mat_len;
 
 		avail_out -= clamped_mat_len;
 		mat_len -= clamped_mat_len;
