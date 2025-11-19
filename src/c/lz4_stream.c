@@ -453,6 +453,95 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 		if (clamped_mat_len > avail_out)
 			clamped_mat_len = (unsigned int)avail_out;
 
+#if 1
+		unsigned int copy_mat_len = clamped_mat_len;
+
+	#if 0
+		if (mat_dst >= 16)
+		{
+			_Alignas(16) uint8_t c[16];
+
+			while (copy_mat_len >= sizeof(c))
+			{
+				if (O_BUF_LEN - o_inpos >= sizeof(c) &&
+					O_BUF_LEN - o_pos >= sizeof(c))
+				{
+					memcpy(c, o_buf + o_inpos, sizeof(c));
+					o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+
+					memcpy(o_buf + o_pos, c, sizeof(c));
+					o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+				}
+				else
+				{
+					for (unsigned int i = 0; i < sizeof(c); i++)
+					{
+						c[i] = o_buf[o_inpos];
+						o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+						o_buf[o_pos] = c[i];
+						o_pos = WRAP_OBUF_IDX(o_pos + 1);
+					}
+				}
+
+				memcpy(out, c, sizeof(c));
+				out += sizeof(c);
+
+				copy_mat_len -= sizeof(c);
+			}
+		}
+	#else
+		if (mat_dst >= sizeof(uintptr_t))
+		{
+			uintptr_t c;
+
+			while (copy_mat_len >= sizeof(c))
+			{
+				if (O_BUF_LEN - o_inpos >= sizeof(c) &&
+					O_BUF_LEN - o_pos >= sizeof(c))
+				{
+					memcpy(&c, o_buf + o_inpos, sizeof(c));
+					o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+
+					memcpy(o_buf + o_pos, &c, sizeof(c));
+					o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+				}
+				else
+				{
+					uint8_t c1[sizeof(c)];
+
+					for (unsigned int i = 0; i < sizeof(c); i++)
+					{
+						c1[i] = o_buf[o_inpos];
+						o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+						o_buf[o_pos] = c1[i];
+						o_pos = WRAP_OBUF_IDX(o_pos + 1);
+					}
+
+					memcpy(&c, c1, sizeof(c));
+				}
+
+				memcpy(out, &c, sizeof(c));
+				out += sizeof(c);
+
+				copy_mat_len -= sizeof(c);
+			}
+		}
+	#endif
+
+	for (unsigned int i = 0; i < copy_mat_len; i++)
+	{
+		uint8_t c = o_buf[o_inpos];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+
+		o_buf[o_pos] = c;
+		o_pos = WRAP_OBUF_IDX(o_pos + 1);
+
+		*out++ = c;
+	}
+
+#else
 		for (unsigned int i = 0; i < clamped_mat_len; i++)
 		{
 			uint8_t c = o_buf[o_inpos];
@@ -463,6 +552,7 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 
 			*out++ = c;
 		}
+#endif
 
 		avail_out -= clamped_mat_len;
 		mat_len -= clamped_mat_len;
