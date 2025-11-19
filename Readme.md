@@ -79,7 +79,7 @@ for (;;)
 }
 ```
 
-In addition to `lz4_dec_stream_run`, a `lz4_dec_stream_run_dst_uncached` function is also provided. It is slightly slower than `lz4_dec_stream_run`, but it plays nice with uncached memory. This is useful when you want to decode directly into a device buffer (for instance, a GPU buffer that can't be mapped cached).
+In addition to `lz4_dec_stream_run`, a `lz4_dec_stream_run_dst_uncached` function is also provided. It is completely interchangeable with `lz4_dec_stream_run`, except that it performs much better when the output buffer is in uncahced/write-combined memory. This can come at a (very) small performance cost compared to `lz4_dec_stream_run`.
 
 ## Speed, Robustness
 

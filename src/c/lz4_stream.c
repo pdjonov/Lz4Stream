@@ -104,7 +104,7 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	\
 	s->p_.phase = phase
 
-void lz4_dec_stream_init( lz4_dec_stream_state *s )
+void lz4_dec_stream_init(lz4_dec_stream_state *s)
 {
 	s->in = 0;
 	s->avail_in = 0;
@@ -121,7 +121,7 @@ void lz4_dec_stream_init( lz4_dec_stream_state *s )
 	s->p_.phase = PHASE_READ_TOK;
 }
 
-int lz4_dec_stream_run( lz4_dec_stream_state *s )
+int lz4_dec_stream_run(lz4_dec_stream_state *s)
 {
 	STREAM_RUN_PROLOG();
 

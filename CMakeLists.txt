@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.31)
+cmake_minimum_required(VERSION 3.22)
 
 project(lz4_stream, VERSION 1.1 DESCRIPTION "LZ4 streaming decompression library")
 
