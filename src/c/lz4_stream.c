@@ -312,8 +312,9 @@ phase_REPORT_ERROR:
 	return -1;
 }
 
-static unsigned int lz4_dec_cpy_no_overlap_mat_ptr(
-	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
+	unsigned int copy_mat_len,
+	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
 	unsigned int n_copied = 0;
@@ -356,47 +357,59 @@ static unsigned int lz4_dec_cpy_no_overlap_mat_ptr(
 	return n_copied;
 }
 
-static unsigned int lz4_dec_cpy_no_overlap_mat_16(
-	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
+static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
+	unsigned int copy_mat_len, unsigned int mat_dst,
+	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
+	if (copy_mat_len < sizeof(uintptr_t))
+		return 0;
+
 	unsigned int n_copied = 0;
 
-	while (copy_mat_len >= 16)
+	uint8_t c_buf[sizeof(uintptr_t)];
+	assert(mat_dst < sizeof(c_buf));
+
+	for (unsigned int i = 0; i < mat_dst; i++)
 	{
-		_Alignas(16) uint8_t c[16];
+		c_buf[i] = o_buf[o_inpos];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+	}
 
-		if (O_BUF_LEN - o_inpos >= sizeof(c) &&
-			O_BUF_LEN - o_pos >= sizeof(c))
+	for (unsigned int i = mat_dst; i < sizeof(c_buf); i++)
+		c_buf[i] = c_buf[i - mat_dst];
+
+	uintptr_t c;
+	memcpy(&c, c_buf, sizeof(c));
+
+	unsigned int jmp_dst = (sizeof(c_buf) / mat_dst) * mat_dst;
+
+	while (copy_mat_len >= sizeof(c))
+	{
+		if (O_BUF_LEN - o_pos >= sizeof(c))
 		{
-			memcpy(c, o_buf + o_inpos, sizeof(c));
-			o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
-
-			memcpy(o_buf + o_pos, c, sizeof(c));
-			o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+			memcpy(o_buf + o_pos, &c, sizeof(c)); //we want a MOV, not a library call!
+			o_pos = WRAP_OBUF_IDX(o_pos + jmp_dst);
 		}
 		else
 		{
-			for (unsigned int i = 0; i < sizeof(c); i++)
+			for (unsigned int i = 0; i < jmp_dst; i++)
 			{
-				c[i] = o_buf[o_inpos];
-				o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
-
-				o_buf[o_pos] = c[i];
+				o_buf[o_pos] = c_buf[i];
 				o_pos = WRAP_OBUF_IDX(o_pos + 1);
 			}
 		}
 
-		memcpy(out + n_copied, c, sizeof(c));
-		n_copied += sizeof(c);
+		memcpy(out + n_copied, &c, sizeof(c));
+		n_copied += jmp_dst;
 
-		copy_mat_len -= sizeof(c);
+		copy_mat_len -= jmp_dst;
 	}
 
 	return n_copied;
 }
 
-static void lz4_dec_cpy_no_overlap_bytes(
+static void lz4_dec_cpy_bytes(
 	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
@@ -557,19 +570,17 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 
 		_Static_assert(sizeof(uintptr_t) < 16, "fix below");
 		unsigned int n_copied;
-		if (mat_dst >= 16)
-			n_copied = lz4_dec_cpy_no_overlap_mat_16(copy_mat_len, o_inpos, o_pos, o_buf, out);
-		else if (mat_dst >= sizeof(uintptr_t))
-			n_copied = lz4_dec_cpy_no_overlap_mat_ptr(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		if (mat_dst >= sizeof(uintptr_t))
+			n_copied = lz4_dec_cpy_mat_no_overlap_ptr(copy_mat_len, o_inpos, o_pos, o_buf, out);
 		else
-			n_copied = 0;
+			n_copied = lz4_dec_cpy_mat_overlapped_ptr(copy_mat_len, mat_dst, o_inpos, o_pos, o_buf, out);
 
 		o_inpos = WRAP_OBUF_IDX(o_inpos + n_copied);
 		o_pos = WRAP_OBUF_IDX(o_pos + n_copied);
 		copy_mat_len -= n_copied;
 		out += n_copied;
 
-		lz4_dec_cpy_no_overlap_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		lz4_dec_cpy_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
 		o_pos = WRAP_OBUF_IDX(o_pos + copy_mat_len);
 		out += copy_mat_len;
 
