@@ -45,6 +45,9 @@
 			"path": "."
 		},
 	],
+	"settings": {
+		"C_Cpp.autoAddFileAssociations": false
+	},
 	"extensions": {
 		"recommendations": [
 			"ms-vscode.cpptools",
