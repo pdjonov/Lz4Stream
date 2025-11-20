@@ -374,7 +374,36 @@ phase_REPORT_ERROR:
 	return -1;
 }
 
-static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
+static unsigned int lz4_dec_cpy_mat_no_overlap(
+	unsigned int copy_mat_len,
+	unsigned int o_inpos, unsigned int o_pos,
+	uint8_t* restrict o_buf, uint8_t* restrict out)
+{
+	for (unsigned int copy_len, copy_mat_len_left = copy_mat_len; copy_mat_len_left != 0; copy_mat_len_left -= copy_len)
+	{
+		copy_len = copy_mat_len_left;
+
+		unsigned int pos_avail = O_BUF_LEN - o_pos;
+		if (UNLIKELY(copy_len > pos_avail))
+			copy_len = pos_avail;
+
+		unsigned int inpos_avail = O_BUF_LEN - o_inpos;
+		if (UNLIKELY(copy_len > inpos_avail))
+			copy_len = inpos_avail;
+
+		memcpy(o_buf + o_pos, o_buf + o_inpos, copy_len);
+		memcpy(out, o_buf + o_inpos, copy_len);
+
+		o_pos = WRAP_OBUF_IDX(o_pos + copy_len);
+		o_inpos = WRAP_OBUF_IDX(o_inpos + copy_len);
+
+		out += copy_len;
+	}
+
+	return copy_mat_len;
+}
+
+static unsigned int lz4_dec_cpy_mat_rle_long_dst(
 	unsigned int copy_mat_len,
 	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
@@ -426,7 +455,7 @@ static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
 	return n_copied;
 }
 
-static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
+static unsigned int lz4_dec_cpy_mat_rle_short_dst(
 	unsigned int copy_mat_len, unsigned int mat_dst,
 	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
@@ -643,10 +672,12 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 
 		_Static_assert(sizeof(uintptr_t) < 16, "fix below");
 		unsigned int n_copied;
-		if (mat_dst >= sizeof(uintptr_t))
-			n_copied = lz4_dec_cpy_mat_no_overlap_ptr(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		if (mat_dst >= copy_mat_len)
+			n_copied = lz4_dec_cpy_mat_no_overlap(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		else if (mat_dst >= sizeof(uintptr_t))
+			n_copied = lz4_dec_cpy_mat_rle_long_dst(copy_mat_len, o_inpos, o_pos, o_buf, out);
 		else
-			n_copied = lz4_dec_cpy_mat_overlapped_ptr(copy_mat_len, mat_dst, o_inpos, o_pos, o_buf, out);
+			n_copied = lz4_dec_cpy_mat_rle_short_dst(copy_mat_len, mat_dst, o_inpos, o_pos, o_buf, out);
 
 		o_inpos = WRAP_OBUF_IDX(o_inpos + n_copied);
 		o_pos = WRAP_OBUF_IDX(o_pos + n_copied);

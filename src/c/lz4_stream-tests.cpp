@@ -337,9 +337,40 @@ TEST_CASE("many matches")
 {
 	test_runners<
 		repeated_generator<
-				chained_generators<
-					counting_span<0, 255>,
-					counting_span<255, 0>
-				>, 8 * 1024>
+			chained_generators<
+				counting_span<0, 255>,
+				counting_span<255, 0>
+			>, 8 * 1024>
+	>();
+}
+
+TEST_CASE("many distant matches")
+{
+	test_runners<
+		repeated_generator<
+			chained_generators<
+				counting_span<0, 255>,
+				constant_span<512, 0>,
+				counting_span<0, 255>,
+				constant_span<512, 1>,
+				counting_span<0, 255>,
+				constant_span<512, 2>,
+				counting_span<0, 255>,
+				constant_span<512, 3>,
+				counting_span<0, 255>,
+				constant_span<512, 4>,
+				counting_span<0, 255>,
+				constant_span<512, 5>,
+				counting_span<0, 255>,
+				constant_span<512, 6>,
+				counting_span<0, 255>,
+				constant_span<512, 7>,
+				counting_span<0, 255>,
+				constant_span<512, 8>,
+				counting_span<0, 255>,
+				constant_span<512, 9>,
+				counting_span<0, 255>,
+				constant_span<0x10000, 0xFF>
+			>, 1024>
 	>();
 }
