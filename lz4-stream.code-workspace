@@ -6,13 +6,15 @@
 				"name": "Debug Tests (Linux)", //doesn't do anything, but required to debug unit tests
 
 				"request": "launch",
-				"type": "lldb"
+				"type": "lldb",
+				"program": "${command:cmake.launchTargetPath}"
 			},
 			{
 				"name": "Debug Tests (Windows)", //doesn't do anything, but required to debug unit tests
 
 				"request": "launch",
-				"type": "cppvsdbg"
+				"type": "cppvsdbg",
+				"program": "${command:cmake.launchTargetPath}"
 			}
 		],
 		"compounds": []
