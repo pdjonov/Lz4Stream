@@ -28,8 +28,18 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 */
 
 #if defined(_MSC_VER)
+	#define ASSUME(fact)				__assume(fact)
+	#define LIKELY(x)					(x)
+	#define UNLIKELY(x)					(x)
 	#define STREAM_RUN_UNREACHABLE()	__assume(0)
 #elif defined(__GNUC__)
+	#ifdef __clang__
+		#define ASSUME(fact)			__builtin_assume(fact)
+	#else
+		#define ASSUME(fact)			__attribute((assume(fact)))
+	#endif
+	#define LIKELY(x)					__builtin_expect(!!(x), 1)
+	#define UNLIKELY(x)					__builtin_expect(!!(x), 0)
 	#define STREAM_RUN_UNREACHABLE()	__builtin_unreachable()
 #else
 	#define STREAM_RUN_UNREACHABLE()	goto phase_REPORT_ERROR
@@ -382,7 +392,7 @@ static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
 		memcpy(&c, o_buf + o_inpos, sizeof(c));
 
 		unsigned int n_read = O_BUF_LEN - o_inpos;
-		if (n_read < sizeof(c))
+		if (UNLIKELY(n_read < sizeof(c)))
 		{
 			//we read off the end of o_buf's active area into the scratch space
 			//read from the beginning and patch the read values
@@ -402,7 +412,7 @@ static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
 		unsigned int n_written = O_BUF_LEN - o_pos;
 		o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
 
-		if (n_written < sizeof(c))
+		if (UNLIKELY(n_written < sizeof(c)))
 			//some bytes went into the scratch pad past the end
 			//need to copy those to the beginning of the buffer
 			memcpy(o_buf + o_pos - sizeof(c), &c, sizeof(c));
@@ -422,6 +432,8 @@ static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
 	_Static_assert(sizeof(uintptr_t) <= O_BUF_PAD, "padding insufficient for sloppy reads");
+	assert(mat_dst < sizeof(uintptr_t));
+	ASSUME(mat_dst < sizeof(uintptr_t));
 
 	if (copy_mat_len < sizeof(uintptr_t))
 		return 0;
@@ -430,10 +442,9 @@ static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
 
 	uintptr_t c;
 	memcpy(&c, o_buf + o_inpos, sizeof(c));
-	if (mat_dst > O_BUF_LEN - o_inpos)
+	unsigned int n_read = O_BUF_LEN - o_inpos;
+	if (UNLIKELY(n_read < mat_dst))
 	{
-		unsigned int n_read = O_BUF_LEN - o_inpos;
-
 		uintptr_t c2;
 		memcpy(&c2, o_buf, sizeof(c2));
 
@@ -445,6 +456,8 @@ static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
 	for (unsigned int n = mat_dst; n < sizeof(uintptr_t); n *= 2)
 		c |= c LBOS n * 8;
 
+	unsigned int shift = (sizeof(uintptr_t) % mat_dst) * 8;
+
 	while (copy_mat_len >= sizeof(c))
 	{
 		memcpy(o_buf + o_pos, &c, sizeof(c));
@@ -452,13 +465,16 @@ static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
 		unsigned int n_written = O_BUF_LEN - o_pos;
 		o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
 
-		if (n_written < sizeof(c))
+		if (UNLIKELY(n_written < sizeof(c)))
 			//some bytes went into the scratch pad past the end
 			//need to copy those to the beginning of the buffer
 			memcpy(o_buf + o_pos - sizeof(c), &c, sizeof(c));
 
 		memcpy(out + n_copied, &c, sizeof(c));
 		n_copied += sizeof(c);
+
+		c = c RBOS shift;
+		c |= c LBOS (sizeof(uintptr_t) * 8 - shift);
 
 		copy_mat_len -= sizeof(c);
 	}

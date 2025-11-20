@@ -225,6 +225,82 @@ TEST_CASE("0x400000 zeroes")
 	test_runners<constant_span<0x400000>>();
 }
 
+TEST_CASE("small RLEs")
+{
+	test_runners<
+		chained_generators<
+			repeated_generator<counting_span<1,  2>, 256>,
+			repeated_generator<counting_span<1,  3>, 256>,
+			repeated_generator<counting_span<1,  4>, 256>,
+			repeated_generator<counting_span<1,  5>, 256>,
+			repeated_generator<counting_span<1,  6>, 256>,
+			repeated_generator<counting_span<1,  7>, 256>,
+			repeated_generator<counting_span<1,  8>, 256>,
+			repeated_generator<counting_span<1,  9>, 256>,
+			repeated_generator<counting_span<1, 10>, 256>,
+			repeated_generator<counting_span<1, 11>, 256>,
+			repeated_generator<counting_span<1, 12>, 256>,
+			repeated_generator<counting_span<1, 13>, 256>,
+			repeated_generator<counting_span<1, 14>, 256>,
+			repeated_generator<counting_span<1, 15>, 256>,
+			repeated_generator<counting_span<1, 16>, 256>,
+			repeated_generator<counting_span<1, 17>, 256>,
+			repeated_generator<counting_span<1, 18>, 256>,
+			repeated_generator<counting_span<1, 19>, 256>,
+			repeated_generator<counting_span<1, 20>, 256>,
+			repeated_generator<counting_span<1, 21>, 256>,
+			repeated_generator<counting_span<1, 22>, 256>,
+			repeated_generator<counting_span<1, 23>, 256>,
+			repeated_generator<counting_span<1, 24>, 256>,
+			repeated_generator<counting_span<1, 25>, 256>,
+			repeated_generator<counting_span<1, 26>, 256>,
+			repeated_generator<counting_span<1, 27>, 256>,
+			repeated_generator<counting_span<1, 28>, 256>,
+			repeated_generator<counting_span<1, 29>, 256>,
+			repeated_generator<counting_span<1, 30>, 256>,
+			repeated_generator<counting_span<1, 31>, 256>,
+			repeated_generator<counting_span<1, 32>, 256>,
+			repeated_generator<counting_span<1, 33>, 256>,
+			repeated_generator<counting_span<1, 34>, 256>,
+			repeated_generator<counting_span<1, 35>, 256>,
+			repeated_generator<counting_span<1, 36>, 256>,
+			repeated_generator<counting_span<1, 37>, 256>,
+			repeated_generator<counting_span<1, 38>, 256>,
+			repeated_generator<counting_span<1, 39>, 256>,
+			repeated_generator<counting_span<1, 40>, 256>,
+			repeated_generator<counting_span<1, 41>, 256>,
+			repeated_generator<counting_span<1, 42>, 256>,
+			repeated_generator<counting_span<1, 43>, 256>,
+			repeated_generator<counting_span<1, 44>, 256>,
+			repeated_generator<counting_span<1, 45>, 256>,
+			repeated_generator<counting_span<1, 46>, 256>,
+			repeated_generator<counting_span<1, 47>, 256>,
+			repeated_generator<counting_span<1, 48>, 256>,
+			repeated_generator<counting_span<1, 49>, 256>,
+			repeated_generator<counting_span<1, 50>, 256>,
+			repeated_generator<counting_span<1, 51>, 256>,
+			repeated_generator<counting_span<1, 52>, 256>,
+			repeated_generator<counting_span<1, 53>, 256>,
+			repeated_generator<counting_span<1, 54>, 256>,
+			repeated_generator<counting_span<1, 55>, 256>,
+			repeated_generator<counting_span<1, 56>, 256>,
+			repeated_generator<counting_span<1, 57>, 256>,
+			repeated_generator<counting_span<1, 58>, 256>,
+			repeated_generator<counting_span<1, 59>, 256>,
+			repeated_generator<counting_span<1, 60>, 256>,
+			repeated_generator<counting_span<1, 61>, 256>,
+			repeated_generator<counting_span<1, 62>, 256>,
+			repeated_generator<counting_span<1, 63>, 256>,
+			
+			repeated_generator<counting_span<1, 64>, 256>,
+			repeated_generator<counting_span<1, 65>, 256>,
+			repeated_generator<counting_span<1, 66>, 256>,
+			repeated_generator<counting_span<1, 67>, 256>,
+
+			repeated_generator<counting_span<1, 255>, 256>
+		>>();
+}
+
 TEST_CASE("Xorshift noise")
 {
 	test_runners<xorshift_uints<0x10000>>();
