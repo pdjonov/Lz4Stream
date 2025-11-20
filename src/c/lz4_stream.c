@@ -103,7 +103,7 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	#error "This code is probably all kinds of incompatible with odd byte lengths."
 #endif
 
-// mask off all but the N right-most (little-endian; leftmost on BE) bits
+// mask off all but the N right-most (little-endian; leftmost on BE) bytes
 #define MASK_N(type, n) ((type)-1 RBOS (sizeof(uintptr_t) - (n)) * 8)
 
 #define STREAM_RUN_PROLOG() \
