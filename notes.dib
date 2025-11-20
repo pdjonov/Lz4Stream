@@ -1,0 +1,148 @@
+#!meta
+
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp","languageName":"csharp"},{"name":"fsharp","languageName":"F#","aliases":["f#","fs"]},{"name":"html","languageName":"HTML"},{"name":"http","languageName":"HTTP"},{"name":"javascript","languageName":"JavaScript","aliases":["js"]},{"name":"mermaid","languageName":"Mermaid"},{"name":"pwsh","languageName":"PowerShell","aliases":["powershell"]},{"name":"value"}]}}
+
+#!markdown
+
+## `lz4_dec_cpy_mat_overlapped_<size_type>`
+
+Copy the last `mat_dst` bytes over and over again until `mat_len_bytes` have been filled.
+* `size_type` is going to be something like a machine word or an SSE register.
+* `mat_dst` is strictly less than `sizeof(size_type)`.
+
+The trivial version looks like this:
+
+#!csharp
+
+const int MaxMatDst = 32;
+
+byte[] SetupTestBuffer()
+{
+	var ret = new byte[MaxMatDst + 512 + 3];
+	for (var i = 0; i < MaxMatDst; i++)
+		ret[i] = (byte)i;
+	return ret;
+}
+
+void CheckExtension(Func<int, byte[]> generator, int maxMatDst = MaxMatDst)
+{
+	for (var matDst = 1; matDst <= maxMatDst; matDst++)
+	{
+		var extBuf = generator(matDst);
+		for (var i = matDst; i < extBuf.Length; i++)
+			if (extBuf[i] != extBuf[i - matDst])
+			{
+				Console.WriteLine($"Error for matDst={matDst} at index {i}: should be {extBuf[i - matDst]}, but is {extBuf[i]}");
+				i = extBuf.Length; //skip to the next matDst
+			}
+	}
+}
+
+byte[] SimpleExtension(int matDst)
+{
+	var buffer = SetupTestBuffer();
+	for (var i = matDst; i < buffer.Length; i++)
+		buffer[i] = buffer[i - matDst];
+	return buffer;
+}
+
+CheckExtension(SimpleExtension);
+
+#!markdown
+
+The trouble with that is that it's running one byte at a time. And that's a lot slower than it could be. Ideally we'd be copying a machine word at a time, and for sizes up to that word size we can do this simply:
+
+#!csharp
+
+byte[] SimpleWordExtension(int matDst)
+{
+	ArgumentOutOfRangeException.ThrowIfGreaterThan(matDst, sizeof(ulong));
+
+	var buffer = SetupTestBuffer();
+
+	Span<byte> patternBuf = stackalloc byte[sizeof(ulong)];
+	for (var i = 0; i < matDst; i++)
+		patternBuf[i] = buffer[i];
+	for (var i = matDst; i < patternBuf.Length; i++)
+		patternBuf[i] = patternBuf[i - matDst];
+
+	var pattern = BitConverter.ToUInt64(patternBuf);
+	var jmpDst = (sizeof(ulong) / matDst) * matDst;
+
+	var oPos = matDst;
+	for (; oPos <= buffer.Length - sizeof(ulong); oPos += jmpDst)
+		BitConverter.TryWriteBytes(buffer.AsSpan(oPos, sizeof(ulong)), pattern);
+
+	if (buffer.Length - oPos >= sizeof(ulong))
+		throw new Exception("Didn't write as far as we could before falling back to byte-by-byte.");
+
+	//fill in the last few bytes the slow way
+
+	for (; oPos < buffer.Length; oPos++)
+		buffer[oPos] = buffer[oPos - matDst];
+
+	return buffer;
+}
+
+CheckExtension(SimpleWordExtension, maxMatDst: sizeof(ulong));
+
+#!markdown
+
+That works, and it's better since we're writing somewhere in the vicinity of a machine word at a time. But it's not _perfect_. The first issue is that `jmpDst` is usually going to be less than the full word size, so each write overlaps the end of the last one. But if the pattern size isn't an exact multiple of `matDst` then writing full words end to end won't work, either. We can fix this by applying an adjustment to the pattern as we run:
+
+#!csharp
+
+byte[] RefinedWordExtension(int matDst)
+{
+	ArgumentOutOfRangeException.ThrowIfGreaterThan(matDst, sizeof(ulong));
+
+	var buffer = SetupTestBuffer();
+
+	var pattern = BitConverter.ToUInt64(buffer);
+	if (BitConverter.IsLittleEndian)
+	{
+		pattern &= ulong.MaxValue >> ((sizeof(ulong) - matDst) * 8);
+		for (var n = matDst; n < sizeof(ulong); n *= 2)
+			pattern |= pattern << n * 8;
+	}
+	else
+	{
+		pattern &= ulong.MaxValue << ((sizeof(ulong) - matDst) * 8);
+		for (var n = matDst; n < sizeof(ulong); n *= 2)
+			pattern |= pattern >> n * 8;
+	}
+
+	var shift = (sizeof(ulong) % matDst) * 8;
+
+	var oPos = matDst;
+	for (; oPos <= buffer.Length - sizeof(ulong); oPos += sizeof(ulong))
+	{
+		BitConverter.TryWriteBytes(buffer.AsSpan(oPos, sizeof(ulong)), pattern);
+		if (BitConverter.IsLittleEndian)
+		{
+			pattern >>= shift;
+			pattern |= (pattern << (sizeof(ulong) * 8 - shift));
+		}
+		else
+		{
+			pattern <<= shift;
+			pattern |= (pattern >> (sizeof(ulong) * 8 - shift));
+		}
+	}
+
+	if (buffer.Length - oPos >= sizeof(ulong))
+		throw new Exception("Didn't write as far as we could before falling back to byte-by-byte.");
+
+	//fill in the last few bytes the slow way
+
+	for (; oPos < buffer.Length; oPos++)
+		buffer[oPos] = buffer[oPos - matDst];
+
+	return buffer;
+}
+
+CheckExtension(RefinedWordExtension, maxMatDst: sizeof(ulong));
+
+#!markdown
+
+This shift is fairly straightforward. At each step we shift off the number of odd leftover bytes, and then we fill in that blank by synthesizing a new group of "leftover" bytes using the new lead bytes.

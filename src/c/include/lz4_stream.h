@@ -55,12 +55,7 @@ typedef struct lz4_dec_stream_state
 
 	struct
 	{
-#ifdef __cplusplus
-		alignas(uintptr_t)
-#else
-		_Alignas(uintptr_t) //should already be true, but juuuuuust in case
-#endif
-		uint8_t			o_buf[0x10000];
+		uint8_t			o_buf[32 + 0x10000 + 32];
 
 		unsigned int	lit_len, mat_len;
 		unsigned int	o_pos, mat_dst;

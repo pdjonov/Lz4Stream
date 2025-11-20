@@ -1,7 +1,20 @@
 {
 	"launch": {
 		"version": "0.2.0",
-		"configurations": [],
+		"configurations": [
+			{
+				"name": "Debug Tests (Linux)", //doesn't do anything, but required to debug unit tests
+
+				"request": "launch",
+				"type": "lldb"
+			},
+			{
+				"name": "Debug Tests (Windows)", //doesn't do anything, but required to debug unit tests
+
+				"request": "launch",
+				"type": "cppvsdbg"
+			}
+		],
 		"compounds": []
 	},
 	"tasks": {

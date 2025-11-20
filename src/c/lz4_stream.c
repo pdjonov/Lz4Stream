@@ -16,8 +16,10 @@
 
 #define MAX_BLOCK_LEN			UINT_MAX
 
-#define O_BUF_LEN 				sizeof(((lz4_dec_stream_state*)0)->p_.o_buf)
+#define O_BUF_LEN 				0x10000
+#define O_BUF_PAD				32 //allows sloppy reads/writes at start+end
 
+_Static_assert(sizeof(((lz4_dec_stream_state *)0)->p_.o_buf) == O_BUF_PAD + O_BUF_LEN + O_BUF_PAD, "fix O_BUF_LEN + O_BUF_PAD");
 _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix below");
 #define WRAP_OBUF_IDX(idx) 		((idx) & (O_BUF_LEN - 1))
 
@@ -48,6 +50,52 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 		if (cond) __VA_ARGS__ else ((void)0)
 #endif
 
+#define LITTLE_ENDIAN	1
+#define BIG_ENDIAN		2
+
+#ifndef LZ4_BYTE_ORDER
+	#if (defined(__BYTE_ORDER) && __BYTE_ORDER == __LITTLE_ENDIAN) || \
+		defined(__LITTLE_ENDIAN__) || \
+		defined(__ARMEL__) || \
+		defined(__THUMBEL__) || \
+		defined(__AARCH64EL__) || \
+		defined(_MIPSEL) || defined(__MIPSEL) || defined(__MIPSEL__) || \
+		(defined(_MSC_VER) && (defined(_M_IX86) || defined(_M_X64) || defined(_M_IA64) || defined(_M_ARM)))
+
+		#define LZ4_BYTE_ORDER LITTLE_ENDIAN
+
+	#elif (defined(__BYTE_ORDER) && __BYTE_ORDER == __BIG_ENDIAN) || \
+		defined(__BIG_ENDIAN__) || \
+		defined(__ARMEB__) || \
+		defined(__THUMBEB__) || \
+		defined(__AARCH64EB__) || \
+		defined(_MIBSEB) || defined(__MIBSEB) || defined(__MIBSEB__) || \
+		(defined(_MSC_VER) && (defined(_M_PPC)))
+
+		#define LZ4_BYTE_ORDER BIG_ENDIAN
+
+	#else
+		#error "Unable to determine target byte order"
+	#endif
+#endif
+
+#if LZ4_BYTE_ORDER == LITTLE_ENDIAN
+	#define RBOS >>		// right-shift on little endian; left-shift on BE
+	#define LBOS <<		// left-shift on little endian; right-shift on BE
+#elif LZ4_BYTE_ORDER == BIG_ENDIAN
+	#define RBOS <<		// left-shift on big endian; right-shift on LE
+	#define LBOS >>		// right-shift o nbig endian; left-shift on LE
+#else
+	#error "No fallback available for unknown endianness."
+#endif
+
+#if CHAR_BIT != 8
+	#error "This code is probably all kinds of incompatible with odd byte lengths."
+#endif
+
+// mask off all but the N right-most (little-endian; leftmost on BE) bits
+#define MASK_N(type, n) ((type)-1 RBOS (sizeof(uintptr_t) - (n)) * 8)
+
 #define STREAM_RUN_PROLOG() \
 	/* pull s apart into stack locals */ \
 	\
@@ -57,7 +105,7 @@ _Static_assert((O_BUF_LEN & (O_BUF_LEN - 1)) == 0, "o_buf not pow2 size; fix bel
 	uint8_t* restrict out = s->out; \
 	size_t avail_out = s->avail_out; \
 	\
-	uint8_t* restrict const o_buf = s->p_.o_buf; \
+	uint8_t* restrict const o_buf = s->p_.o_buf + O_BUF_PAD; \
 	unsigned int o_pos = s->p_.o_pos; \
 	\
 	unsigned int lit_len = s->p_.lit_len; /* the length of the current literal */ \
@@ -224,7 +272,7 @@ phase_READ_EX_MAT_LEN: //loop; read an additional byte of match length
 phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 	assert(mat_len > 0);
 	{
-		//note: mat_dst will not be more than O_BUF_LEN = sizeof(s->p_.o_buf)
+		//nb: mat_dst will not be more than O_BUF_LEN
 		unsigned int clamped_mat_len = mat_len < avail_out ?
 			mat_len :
 			(unsigned int)avail_out;
@@ -321,36 +369,43 @@ static unsigned int lz4_dec_cpy_mat_no_overlap_ptr(
 	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
+	_Static_assert(sizeof(uintptr_t) <= O_BUF_PAD, "padding insufficient for sloppy reads");
+
 	unsigned int n_copied = 0;
 
 	while (copy_mat_len >= sizeof(uintptr_t))
 	{
 		uintptr_t c;
 
-		if (O_BUF_LEN - o_inpos >= sizeof(c) &&
-			O_BUF_LEN - o_pos >= sizeof(c))
+		//read the next word from o_buf's read cursor
+
+		memcpy(&c, o_buf + o_inpos, sizeof(c));
+
+		unsigned int n_read = O_BUF_LEN - o_inpos;
+		if (n_read < sizeof(c))
 		{
-			memcpy(&c, o_buf + o_inpos, sizeof(c));
-			o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
+			//we read off the end of o_buf's active area into the scratch space
+			//read from the beginning and patch the read values
 
-			memcpy(o_buf + o_pos, &c, sizeof(c));
-			o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+			uintptr_t c2;
+			memcpy(&c2, o_buf, sizeof(c2));
+
+			c &= MASK_N(uintptr_t, n_read);
+			c |= c2 LBOS n_read * 8;
 		}
-		else
-		{
-			uint8_t c1[sizeof(c)];
+		o_inpos = WRAP_OBUF_IDX(o_inpos + sizeof(c));
 
-			for (unsigned int i = 0; i < sizeof(c); i++)
-			{
-				c1[i] = o_buf[o_inpos];
-				o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+		//write the word back to o_buf's write cursor
 
-				o_buf[o_pos] = c1[i];
-				o_pos = WRAP_OBUF_IDX(o_pos + 1);
-			}
+		memcpy(o_buf + o_pos, &c, sizeof(c));
 
-			memcpy(&c, c1, sizeof(c));
-		}
+		unsigned int n_written = O_BUF_LEN - o_pos;
+		o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+
+		if (n_written < sizeof(c))
+			//some bytes went into the scratch pad past the end
+			//need to copy those to the beginning of the buffer
+			memcpy(o_buf + o_pos - sizeof(c), &c, sizeof(c));
 
 		memcpy(out + n_copied, &c, sizeof(c));
 		n_copied += sizeof(c);
@@ -366,54 +421,52 @@ static unsigned int lz4_dec_cpy_mat_overlapped_ptr(
 	unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
+	_Static_assert(sizeof(uintptr_t) <= O_BUF_PAD, "padding insufficient for sloppy reads");
+
 	if (copy_mat_len < sizeof(uintptr_t))
 		return 0;
 
 	unsigned int n_copied = 0;
 
-	uint8_t c_buf[sizeof(uintptr_t)];
-	assert(mat_dst < sizeof(c_buf));
-
-	for (unsigned int i = 0; i < mat_dst; i++)
+	uintptr_t c;
+	memcpy(&c, o_buf + o_inpos, sizeof(c));
+	if (mat_dst > O_BUF_LEN - o_inpos)
 	{
-		c_buf[i] = o_buf[o_inpos];
-		o_inpos = WRAP_OBUF_IDX(o_inpos + 1);
+		unsigned int n_read = O_BUF_LEN - o_inpos;
+
+		uintptr_t c2;
+		memcpy(&c2, o_buf, sizeof(c2));
+
+		c &= MASK_N(uintptr_t, n_read);
+		c |= c2 LBOS n_read * 8;
 	}
 
-	for (unsigned int i = mat_dst; i < sizeof(c_buf); i++)
-		c_buf[i] = c_buf[i - mat_dst];
-
-	uintptr_t c;
-	memcpy(&c, c_buf, sizeof(c));
-
-	unsigned int jmp_dst = (sizeof(c_buf) / mat_dst) * mat_dst;
+	c &= MASK_N(uintptr_t, mat_dst);
+	for (unsigned int n = mat_dst; n < sizeof(uintptr_t); n *= 2)
+		c |= c LBOS n * 8;
 
 	while (copy_mat_len >= sizeof(c))
 	{
-		if (O_BUF_LEN - o_pos >= sizeof(c))
-		{
-			memcpy(o_buf + o_pos, &c, sizeof(c)); //we want a MOV, not a library call!
-			o_pos = WRAP_OBUF_IDX(o_pos + jmp_dst);
-		}
-		else
-		{
-			for (unsigned int i = 0; i < jmp_dst; i++)
-			{
-				o_buf[o_pos] = c_buf[i];
-				o_pos = WRAP_OBUF_IDX(o_pos + 1);
-			}
-		}
+		memcpy(o_buf + o_pos, &c, sizeof(c));
+
+		unsigned int n_written = O_BUF_LEN - o_pos;
+		o_pos = WRAP_OBUF_IDX(o_pos + sizeof(c));
+
+		if (n_written < sizeof(c))
+			//some bytes went into the scratch pad past the end
+			//need to copy those to the beginning of the buffer
+			memcpy(o_buf + o_pos - sizeof(c), &c, sizeof(c));
 
 		memcpy(out + n_copied, &c, sizeof(c));
-		n_copied += jmp_dst;
+		n_copied += sizeof(c);
 
-		copy_mat_len -= jmp_dst;
+		copy_mat_len -= sizeof(c);
 	}
 
 	return n_copied;
 }
 
-static void lz4_dec_cpy_bytes(
+static void lz4_dec_cpy_mat_bytes(
 	unsigned int copy_mat_len, unsigned int o_inpos, unsigned int o_pos,
 	uint8_t* restrict o_buf, uint8_t* restrict out)
 {
@@ -563,7 +616,7 @@ phase_READ_EX_MAT_LEN: //loop; read an additional byte of match length
 phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 	assert(mat_len > 0);
 	{
-		//note: mat_dst will not be more than O_BUF_LEN = sizeof(s->p_.o_buf)
+		//nb: mat_dst will not be more than O_BUF_LEN
 		unsigned int o_inpos = WRAP_OBUF_IDX(o_pos - mat_dst);
 
 		unsigned int clamped_mat_len = mat_len;
@@ -584,7 +637,8 @@ phase_COPY_MAT: //copy mat_len bytes from mat_dst bytes behind the output cursor
 		copy_mat_len -= n_copied;
 		out += n_copied;
 
-		lz4_dec_cpy_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
+		//consume any remaining bytes past the end of the last block
+		lz4_dec_cpy_mat_bytes(copy_mat_len, o_inpos, o_pos, o_buf, out);
 		o_pos = WRAP_OBUF_IDX(o_pos + copy_mat_len);
 		out += copy_mat_len;
 
